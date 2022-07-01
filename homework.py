@@ -7,7 +7,9 @@ from http import HTTPStatus
 import requests
 import telegram
 from dotenv import load_dotenv
-from exceptions import SendingErrorException
+
+from exceptions import (RequestsErrorException, SendingErrorException,
+                        StatusCodeErrorException)
 
 load_dotenv()
 
@@ -44,10 +46,12 @@ def send_message(bot, message):
     строку с текстом сообщения.
     """
     try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logger.info('Начата отправка сообщения в телеграм')
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except Exception:
         raise SendingErrorException('Ошибка отправки сообщения в телеграм')
+    else:
+        logger.info('Сообщение в телеграм отправлено')
 
 
 def get_api_answer(current_timestamp):
@@ -57,18 +61,15 @@ def get_api_answer(current_timestamp):
     вернуть ответ API, преобразовав его из формата JSON к типам данных Python.
     """
     try:
-        timestamp = current_timestamp or int(time.time())
-        params = {'from_date': timestamp}
+        params = {'from_date': current_timestamp}
         logger.info(f'Делаем запрос на {ENDPOINT}')
         response = requests.get(ENDPOINT, headers=HEADERS,
                                 params=params)
+        print(f'{ENDPOINT}{HEADERS}{params}')
     except Exception as error:
-        logger.error(f'Ошибка при запросе к API: {error}')
-        raise Exception(f'Ошибка при запросе к API: {error}')
+        raise RequestsErrorException(f'Ошибка при запросе к API: {error}')
     if response.status_code != HTTPStatus.OK:
-        status_code = response.status_code
-        logging.error(f'Ошибка {status_code}')
-        raise Exception(f'Ошибка {status_code}')
+        raise StatusCodeErrorException(f'Ошибка {ENDPOINT}{HEADERS}{params}')
     return response.json()
 
 
@@ -83,29 +84,15 @@ def check_response(response):
     if not isinstance(response, dict):
         raise TypeError(
             'Ответ API отличен от словаря')
-    try:
-        list_homeworks = response['homeworks']
-    except KeyError:
-        logger.error(
-            'Ошибка словаря по ключу homeworks'
-        )
-        raise KeyError(
-            'Ошибка словаря по ключу homeworks'
-        )
     if 'homeworks' not in response:
         raise KeyError('В словаре response нет ключа "homeworks"')
     if 'current_date' not in response:
         raise KeyError('В словаре response нет ключа "current_date"')
-    try:
-        homework = list_homeworks[0]
-    except IndexError:
-        logger.error(
-            'Список домашних работ пуст'
-        )
-        raise IndexError(
-            'Список домашних работ пуст'
-        )
-    return homework
+    if not isinstance(response['homeworks'], list):
+        raise TypeError("Ответ API: homework не список")
+    if len(response['homeworks'][0]) == 0:
+        raise KeyError('Ответ API: список пуст')
+    return response['homeworks'][0]
 
 
 def parse_status(homework):
@@ -125,7 +112,7 @@ def parse_status(homework):
 
     if homework_status not in VERDICT_NAME:
         logger.error(f'Статус {homework_status} не найден')
-        raise KeyError
+        raise KeyError(f'Статус {homework_status} не найден')
 
     verdict = VERDICT_NAME[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
@@ -142,14 +129,14 @@ def check_tokens():
 
 def main():
     """Основная логика работы бота."""
-    current_timestamp = int(time.time())
-    last_status = ''
-    error_cache_message = ''
     if not check_tokens():
         logger.critical(
             'Отсутствуют одна или несколько переменных окружения'
         )
         sys.exit(1)
+    current_timestamp = int(time.time())
+    last_status = ''
+    error_cache_message = ''
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     while True:
         try:
@@ -160,11 +147,11 @@ def main():
                 last_status = message
             current_timestamp = response.get('current_date', current_timestamp)
         except Exception as error:
-            logger.error(error)
-            message2 = f'Сбой в работе программы: {error}'
-            if message2 != error_cache_message:
-                send_message(bot, message2)
-                error_cache_message = message2
+            logging.error("Произошло исключение", exc_info=True)
+            error_message = f'Сбой в работе программы: {error}'
+            if error_message != error_cache_message:
+                send_message(bot, error_message)
+                error_cache_message = error_message
         finally:
             time.sleep(RETRY_TIME)
 
