@@ -65,11 +65,13 @@ def get_api_answer(current_timestamp):
         logger.info(f'Делаем запрос на {ENDPOINT}')
         response = requests.get(ENDPOINT, headers=HEADERS,
                                 params=params)
-        print(f'{ENDPOINT}{HEADERS}{params}')
     except Exception as error:
         raise RequestsErrorException(f'Ошибка при запросе к API: {error}')
     if response.status_code != HTTPStatus.OK:
-        raise StatusCodeErrorException(f'Ошибка {ENDPOINT}{HEADERS}{params}')
+        raise StatusCodeErrorException(
+            f'Ошибка запроса к {ENDPOINT}, схема авторизации: {HEADERS}, '
+            f'время запроса {params}, статус {response.status_code}'
+        )
     return response.json()
 
 
@@ -111,7 +113,6 @@ def parse_status(homework):
     homework_status = homework['status']
 
     if homework_status not in VERDICT_NAME:
-        logger.error(f'Статус {homework_status} не найден')
         raise KeyError(f'Статус {homework_status} не найден')
 
     verdict = VERDICT_NAME[homework_status]
