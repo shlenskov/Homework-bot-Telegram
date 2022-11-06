@@ -17,7 +17,7 @@ python-telegram-bot 13.7
 Клонировать репозиторий и перейти в него в командной строке:
 
 ```
-git@github.com:shlenskov/Homework-bot-Telegram.git
+git clone git@github.com:shlenskov/Homework-bot-Telegram.git
 cd homework_bot
 ```
 
